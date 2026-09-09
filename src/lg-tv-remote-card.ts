@@ -211,7 +211,7 @@ export class LGWebOSRemoteCard extends LitElement implements LovelaceCard {
                     ><ha-icon icon="mdi:arrow-left"></ha-icon
                   ></ha-icon-button>
                   ${this._config.show_button_labels
-                    ? html`<span class="btn-label">terug</span>`
+                    ? html`<span class="btn-label">back</span>`
                     : ""}
                 </div>
                 <div class="btn-container">
