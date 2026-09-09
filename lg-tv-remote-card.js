@@ -72,520 +72,372 @@ const t=t=>(e,o)=>{void 0!==o?o.addInitializer(()=>{customElements.define(t,e);}
  * SPDX-License-Identifier: BSD-3-Clause
  */function r(r){return n({...r,state:!0,attribute:!1})}
 
-// Vooraf gedefinieerde app-lijst met URL-schema's, icons én officiële Android Package IDs
-const DEFAULT_APPS = {
-    netflix: { name: 'Netflix', activity: 'netflix://', icon: 'mdi:netflix', packageId: 'com.netflix.ninja' },
-    nlziet: { name: 'NLZIET', activity: 'nlziet://', icon: 'mdi:television-play', packageId: 'nl.streamone.nlziet' },
-    spotify: { name: 'Spotify', activity: 'spotify://', icon: 'mdi:spotify', packageId: 'com.spotify.tv.android' },
-    youtube: { name: 'YouTube', activity: 'youtube.com', icon: 'mdi:youtube', packageId: 'com.google.android.youtube.tv' },
-    videoland: { name: 'Videoland', activity: 'videoland-v2://', icon: 'mdi:play-box', packageId: 'nl.rtl.videoland.androidtv' },
-    disneyplus: { name: 'Disney+', activity: 'disneyplus.com', icon: 'mdi:television-classic', packageId: 'com.disney.disneyplus' },
-    primevideo: { name: 'Prime Video', activity: 'primevideo.com', icon: 'mdi:video', packageId: 'com.amazon.amazonvideo.livingroom' },
-    viaplay: { name: 'Viaplay', activity: 'viaplay://', icon: 'mdi:sports-car', packageId: 'com.viaplay.android' },
-    max: { name: 'Max (HBO)', activity: 'max.com', icon: 'mdi:movie-roll', packageId: 'com.wbd.stream' },
-    plex: { name: 'Plex', activity: 'plex://', icon: 'mdi:plex', packageId: 'com.plexapp.android' },
-    kodi: { name: 'Kodi', activity: 'kodi://', icon: 'mdi:kodi', packageId: 'org.xbmc.kodi' },
-};
-let GoogleTVRemoteCard = class GoogleTVRemoteCard extends i {
-    constructor() {
-        super(...arguments);
-        this._volume = 0.4;
-        this._muted = false;
-    }
+let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
     setConfig(config) {
-        if (!config.remote_entity || !config.media_entity) {
-            throw new Error("remote_entity and media_entity are required");
+        if (!config.entity) {
+            throw new Error("Geef een geldige LG WebOS media_player entiteit op.");
         }
-        this.config = config;
+        this._config = {
+            show_title: true,
+            show_navigation: true,
+            show_buttons: true,
+            show_apps: true,
+            show_volume: true,
+            show_label_navigation: true,
+            show_label_volume: true,
+            show_button_labels: true,
+            label_navigation: "navigatie",
+            label_volume: "volume",
+            ...config,
+        };
     }
-    updated(changedProps) {
-        if (changedProps.has("hass")) {
-            const entity = this.config.volume_entity ?? this.config.media_entity;
-            const state = this.hass?.states[entity];
-            if (state?.attributes?.volume_level !== undefined) {
-                this._volume = state.attributes.volume_level;
+    shouldUpdate(changedProps) {
+        if (changedProps.has("_config"))
+            return true;
+        const oldHass = changedProps.get("hass");
+        if (!oldHass)
+            return true;
+        // Alleen updaten als de status van de TV of de receiver verandert
+        return (oldHass.states[this._config.entity] !==
+            this.hass.states[this._config.entity] ||
+            (!!this._config.ampli_entity &&
+                oldHass.states[this._config.ampli_entity] !==
+                    this.hass.states[this._config.ampli_entity]));
+    }
+    _callService(service, serviceData = {}, domain = "media_player") {
+        this.hass.callService(domain, service, {
+            entity_id: this._config.entity,
+            ...serviceData,
+        });
+    }
+    _handleVolume(action) {
+        // Als er een receiver is ingesteld, sturen we de volume-acties daarheen
+        const targetEntity = this._config.ampli_entity || this._config.entity;
+        const domain = targetEntity.startsWith("media_player.")
+            ? "media_player"
+            : "button";
+        this.hass.callService(domain, action, {
+            entity_id: targetEntity,
+        });
+    }
+    _handlePower() {
+        const stateObj = this.hass.states[this._config.entity];
+        if (!stateObj || stateObj.state === "off") {
+            if (this._config.mac) {
+                // Gebruik wake_on_lan service als er een MAC-adres is geconfigureerd
+                this.hass.callService("wake_on_lan", "send_magic_packet", {
+                    mac: this._config.mac,
+                });
             }
-            if (state?.attributes?.is_volume_muted !== undefined) {
-                this._muted = state.attributes.is_volume_muted;
+            else {
+                this._callService("turn_on");
             }
         }
+        else {
+            this._callService("turn_off");
+        }
     }
-    _launchApp(activity) {
-        if (!this.config || !this.hass)
-            return;
-        this.hass.callService('remote', 'turn_on', {
-            entity_id: this.config.remote_entity,
-            activity: activity
-        });
-    }
-    get _isOn() {
-        const remoteState = this.hass?.states[this.config.remote_entity]?.state;
-        return remoteState === "on";
-    }
-    get _currentActivity() {
-        const remoteState = this.hass?.states[this.config.remote_entity];
-        return remoteState?.attributes?.current_activity || "";
-    }
-    togglePower() {
-        if (!this.config || !this.hass)
-            return;
-        this.hass.callService('remote', 'toggle', {
-            entity_id: this.config.remote_entity
-        });
-    }
-    sendKey(key) {
-        if (!this.config || !this.hass)
-            return;
-        this.hass.callService('remote', 'send_command', {
-            entity_id: this.config.remote_entity,
-            command: key
-        });
-    }
-    volStep(step) {
-        if (!this.config || !this.hass)
-            return;
-        const entity = this.config.volume_entity ?? this.config.media_entity;
-        let newVol = this._volume + step;
-        if (newVol > 1)
-            newVol = 1;
-        if (newVol < 0)
-            newVol = 0;
-        this.hass.callService('media_player', 'volume_set', {
-            entity_id: entity,
-            volume_level: newVol
-        });
-    }
-    onSlider(e) {
-        if (!this.config || !this.hass)
-            return;
-        const entity = this.config.volume_entity ?? this.config.media_entity;
-        const newVol = parseFloat(e.target.value);
-        this.hass.callService('media_player', 'volume_set', {
-            entity_id: entity,
-            volume_level: newVol
-        });
-    }
-    toggleMute() {
-        if (!this.config || !this.hass)
-            return;
-        const entity = this.config.volume_entity ?? this.config.media_entity;
-        this.hass.callService('media_player', 'volume_mute', {
-            entity_id: entity,
-            is_volume_muted: !this._muted
-        });
+    _handleSource(sourceName) {
+        this._callService("select_source", { source: sourceName });
     }
     render() {
-        const cfg = this.config;
-        const showTitle = cfg.show_title !== false;
-        const showNavigation = cfg.show_navigation !== false;
-        const showButtons = cfg.show_buttons !== false;
-        const showApps = cfg.show_apps !== false;
-        const showVolume = cfg.show_volume !== false;
-        const showLabelNavigation = cfg.show_label_navigation !== false;
-        const showLabelVolume = cfg.show_label_volume !== false;
-        const showButtonLabels = cfg.show_button_labels !== false;
-        const lblNavigation = cfg.label_navigation ?? "navigation";
-        const lblVolume = cfg.label_volume ?? "volume";
-        const isOn = this._isOn;
-        const currentAct = this._currentActivity.toLowerCase();
-        // GECORRIGEERD: Valt nu terug op een lege array [] als er geen apps in de YAML zijn gedefinieerd
-        const configuredApps = cfg?.apps || [];
-        // Controleer of de TV op het Google TV startscherm staat (alleen als de TV aan staat)
-        const isHomeActive = isOn && currentAct.includes("com.google.android.apps.tv.launcherx");
+        if (!this.hass || !this._config)
+            return b ``;
+        const stateObj = this.hass.states[this._config.entity];
+        const isOn = stateObj && stateObj.state !== "off";
+        const currentSource = stateObj?.attributes?.source;
+        // Dynamische CSS variabelen toepassen op basis van de config (net als in jouw repo)
+        const scale = this._config.dimensions?.scale || 1;
+        const borderWidth = this._config.dimensions?.border_width || "1px";
+        const btnColor = this._config.colors?.buttons ||
+            "var(--deactive-background-button-color, #f2f0fa)";
+        const txtColor = this._config.colors?.texts || "var(--primary-text-color)";
+        const bgColor = this._config.colors?.background || "var(--primary-background-color)";
+        const borderColor = this._config.colors?.border || "var(--app-header-text-color, #ccc)";
         return b `
-      <div class="remote">
+      <ha-card
+        style="
+        --remote-scale: ${scale};
+        --remote-border-width: ${borderWidth};
+        --remote-btn-color: ${btnColor};
+        --remote-txt-color: ${txtColor};
+        --remote-bg-color: ${bgColor};
+        --remote-border-color: ${borderColor};
+      "
+      >
+        ${this._config.show_title && this._config.title
+            ? b `<div class="title">${this._config.title}</div>`
+            : ""}
 
-        <div class="top-row">
-          <div class="power-btn ${isOn ? "active" : ""}" @click=${this.togglePower} title=${isOn ? "Turn off" : "Turn on"}>
+        <!-- Power Button -->
+        <div class="row central">
+          <ha-icon-button
+            class="btn power ${isOn ? "on" : ""}"
+            @click=${this._handlePower}
+          >
             <ha-icon icon="mdi:power"></ha-icon>
-          </div>
-          ${showTitle && cfg.title ? b `
-            <div class="top-title">${cfg.title}</div>
-          ` : b `<div class="top-title"></div>`}
-          <div class="top-spacer"></div>
+          </ha-icon-button>
         </div>
 
-        ${showNavigation ? b `
-          ${showLabelNavigation && lblNavigation ? b `<div class="lbl">${lblNavigation}</div>` : A}
-          <div class="pad">
-            <div class="arr u" @click=${() => this.sendKey("DPAD_UP")}>
-              <div class="icon-wrap">
-                <ha-icon icon="mdi:chevron-up"></ha-icon>
+        <!-- Navigation Section -->
+        ${this._config.show_navigation
+            ? b `
+              ${this._config.show_label_navigation
+                ? b `<div class="label">
+                    ${this._config.label_navigation}
+                  </div>`
+                : ""}
+              <div class="dpad">
+                <div class="row central">
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "UP",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:chevron-up"></ha-icon
+                  ></ha-icon-button>
+                </div>
+                <div class="row space-betweenHorizontal">
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "LEFT",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:chevron-left"></ha-icon
+                  ></ha-icon-button>
+                  <button
+                    class="btn ok-btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "ENTER",
+                media_content_type: "button",
+            })}
+                  >
+                    OK
+                  </button>
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "RIGHT",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:chevron-right"></ha-icon
+                  ></ha-icon-button>
+                </div>
+                <div class="row central">
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "DOWN",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:chevron-down"></ha-icon
+                  ></ha-icon-button>
+                </div>
               </div>
-            </div>
-            <div class="arr d" @click=${() => this.sendKey("DPAD_DOWN")}>
-              <div class="icon-wrap">
-                <ha-icon icon="mdi:chevron-down"></ha-icon>
+            `
+            : ""}
+
+        <!-- Control Buttons (Back / Home) -->
+        ${this._config.show_buttons
+            ? b `
+              <div class="row space-around">
+                <div class="btn-container">
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "BACK",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:arrow-left"></ha-icon
+                  ></ha-icon-button>
+                  ${this._config.show_button_labels
+                ? b `<span class="btn-label">back</span>`
+                : ""}
+                </div>
+                <div class="btn-container">
+                  <ha-icon-button
+                    class="btn"
+                    @click=${() => this._callService("play_media", {
+                media_content_id: "HOME",
+                media_content_type: "button",
+            })}
+                    ><ha-icon icon="mdi:home"></ha-icon
+                  ></ha-icon-button>
+                  ${this._config.show_button_labels
+                ? b `<span class="btn-label">home</span>`
+                : ""}
+                </div>
               </div>
-            </div>
-            <div class="arr l" @click=${() => this.sendKey("DPAD_LEFT")}>
-              <div class="icon-wrap">
-                <ha-icon icon="mdi:chevron-left"></ha-icon>
+            `
+            : ""}
+
+        <!-- App Launcher Bar -->
+        ${this._config.show_apps &&
+            this._config.sources &&
+            this._config.sources.length > 0
+            ? b `
+              <div class="apps-containerRow">
+                ${this._config.sources.map((src) => {
+                const isAppActive = currentSource?.toLowerCase() === src.name.toLowerCase();
+                return b `
+                    <ha-icon-button
+                      class="btn app-btn ${isAppActive ? "active-app" : ""}"
+                      @click=${() => this._handleSource(src.name)}
+                    >
+                      ${src.icon === "disney" || src.icon === "amazon"
+                    ? b `<span class="special-icon">${src.icon}</span>`
+                    : b `<ha-icon icon="${src.icon}"></ha-icon>`}
+                    </ha-icon-button>
+                  `;
+            })}
               </div>
-            </div>
-            <div class="arr r" @click=${() => this.sendKey("DPAD_RIGHT")}>
-              <div class="icon-wrap">
-                <ha-icon icon="mdi:chevron-right"></ha-icon>
+            `
+            : ""}
+
+        <!-- Volume Section -->
+        ${this._config.show_volume
+            ? b `
+              ${this._config.show_label_volume
+                ? b `<div class="label">${this._config.label_volume}</div>`
+                : ""}
+              <div class="row space-betweenHorizontal volume-row">
+                <ha-icon-button
+                  class="btn"
+                  @click=${() => this._handleVolume("volume_down")}
+                  ><ha-icon icon="mdi:volume-minus"></ha-icon
+                ></ha-icon-button>
+                <ha-icon-button
+                  class="btn"
+                  @click=${() => this._handleVolume("volume_mute")}
+                  ><ha-icon icon="mdi:volume-off"></ha-icon
+                ></ha-icon-button>
+                <ha-icon-button
+                  class="btn"
+                  @click=${() => this._handleVolume("volume_up")}
+                  ><ha-icon icon="mdi:volume-plus"></ha-icon
+                ></ha-icon-button>
               </div>
-            </div>
-            <div class="ok" @click=${() => this.sendKey("DPAD_CENTER")}>ok</div>
-          </div>
-        ` : A}
-
-        ${showButtons ? b `
-          <div class="hr"></div>
-          <div class="btn-row">
-            <div class="btn ${!showButtonLabels ? 'no-label' : ''}" @click=${() => this.sendKey("BACK")}>
-              <ha-icon icon="mdi:arrow-u-left-top"></ha-icon>
-              ${showButtonLabels ? b `<span>back</span>` : A}
-            </div>
-            <div class="btn ${isHomeActive ? 'active' : ''} ${!showButtonLabels ? 'no-label' : ''}" @click=${() => this.sendKey("HOME")}>
-              <ha-icon icon="mdi:home"></ha-icon>
-              ${showButtonLabels ? b `<span>home</span>` : A}
-            </div>
-          </div>
-        ` : A}
-
-        <!-- APPS BALK (Toont alleen iets als er daadwerkelijk apps in de lijst staan) -->
-        ${showApps && configuredApps.length > 0 ? b `
-          <div class="hr"></div>
-          <div class="app-row">
-            ${configuredApps.map((appKeyOrObj) => {
-            let name = '';
-            let activity = '';
-            let icon = 'mdi:apps';
-            let packageId = '';
-            if (typeof appKeyOrObj === 'string' && DEFAULT_APPS[appKeyOrObj]) {
-                name = DEFAULT_APPS[appKeyOrObj].name;
-                activity = DEFAULT_APPS[appKeyOrObj].activity;
-                icon = DEFAULT_APPS[appKeyOrObj].icon;
-                packageId = DEFAULT_APPS[appKeyOrObj].packageId;
-            }
-            else if (typeof appKeyOrObj === 'object') {
-                const appId = appKeyOrObj.id || '';
-                const defaultApp = appId && DEFAULT_APPS[appId] ? DEFAULT_APPS[appId] : null;
-                name = appKeyOrObj.name || defaultApp?.name || appId || '';
-                activity = appKeyOrObj.activity || defaultApp?.activity || '';
-                icon = appKeyOrObj.icon || defaultApp?.icon || 'mdi:apps';
-                packageId = appKeyOrObj.packageId || defaultApp?.packageId || '';
-            }
-            if (!activity && !packageId)
-                return b ``;
-            const isActive = isOn && ((packageId && currentAct.includes(packageId.toLowerCase())) ||
-                (activity && currentAct.includes(activity.toLowerCase())) ||
-                (typeof appKeyOrObj === 'string' && currentAct.includes(appKeyOrObj.toLowerCase())) ||
-                (typeof appKeyOrObj === 'object' && appKeyOrObj.id && currentAct.includes(appKeyOrObj.id.toLowerCase())));
-            return b `
-                <ha-icon-button 
-                  class="${isActive ? 'active' : ''}" 
-                  .title="${name}" 
-                  @click="${() => this._launchApp(activity)}"
-                >
-                  <ha-icon icon="${icon}"></ha-icon>
-                </ha-icon-button>
-              `;
-        })}
-          </div>
-        ` : A}      
-
-        ${showVolume ? b `
-          <div class="hr"></div>
-          ${showLabelVolume && lblVolume ? b `<div class="lbl">${lblVolume}</div>` : A}
-          <div class="vol-wrap">
-            <div class="vol-btn" @click=${() => this.volStep(-0.02)}>
-              <ha-icon icon="mdi:minus"></ha-icon>
-            </div>
-            <input type="range" min="0" max="1" step="0.02" .value=${String(this._volume)} @input=${this.onSlider}/>
-            <div class="vol-btn" @click=${() => this.volStep(0.02)}>
-              <ha-icon icon="mdi:plus"></ha-icon>
-            </div>
-            <div class="vol-btn ${this._muted ? "muted" : ""}" @click=${this.toggleMute}>
-              <ha-icon icon=${this._muted ? "mdi:volume-off" : "mdi:volume-high"}></ha-icon>
-            </div>
-          </div>
-        ` : A}
-
-      </div>
+            `
+            : ""}
+      </ha-card>
     `;
     }
+    static get styles() {
+        return i$3 `
+      ha-card {
+        background-color: var(--remote-bg-color);
+        border: var(--remote-border-width) solid var(--remote-border-color);
+        padding: calc(16px * var(--remote-scale));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: scale(var(--remote-scale));
+        transform-origin: top center;
+      }
+      .title {
+        font-size: 1.2em;
+        font-weight: bold;
+        margin-bottom: 8px;
+        color: var(--remote-txt-color);
+      }
+      .label {
+        font-size: 0.8em;
+        text-transform: uppercase;
+        margin: 8px 0;
+        color: var(--remote-txt-color);
+        opacity: 0.7;
+      }
+      .row {
+        display: flex;
+        width: 100%;
+        justify-content: center;
+        margin: 4px 0;
+      }
+      .central {
+        justify-content: center;
+      }
+      .space-around {
+        justify-content: space-around;
+        width: 100%;
+      }
+      .space-betweenHorizontal {
+        justify-content: space-between;
+        width: 80%;
+      }
+      .dpad {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .btn {
+        background-color: var(--remote-btn-color);
+        color: var(--remote-txt-color);
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        transition: background-color 0.2s;
+      }
+      .ok-btn {
+        border-radius: 12px;
+        font-weight: bold;
+        width: 54px;
+        height: 48px;
+      }
+      .power.on {
+        background-color: #ef5350;
+        color: white;
+      }
+      .btn-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .btn-label {
+        font-size: 0.75em;
+        margin-top: 2px;
+        color: var(--remote-txt-color);
+      }
+      .apps-containerRow {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .active-app {
+        border: 2px solid var(--accent-color, #03a9f4);
+        box-shadow: 0 0 8px var(--accent-color, #03a9f4);
+      }
+      .special-icon {
+        font-size: 0.7em;
+        font-weight: bold;
+        text-transform: uppercase;
+      }
+      .volume-row {
+        margin-top: 8px;
+      }
+    `;
+    }
+    getCardSize() {
+        return 5;
+    }
 };
-GoogleTVRemoteCard.styles = i$3 `
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    .remote {
-      width: 280px;
-      margin: 0 auto;
-      background: #f5f5f5;
-      border-radius: 40px;
-      padding: 28px 22px 36px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      font-family: sans-serif;
-    }
-
-    .lbl {
-      font-size: 10px;
-      color: #999;
-      text-align: center;
-      letter-spacing: 0.08em;
-    }
-
-    .hr {
-      height: 1px;
-      background: #e0e0e0;
-      margin: 0 4px;
-    }
-
-    /* Top row with power button */
-    .top-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 34px;
-    }
-    .power-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 34px;
-      height: 34px;
-      border-radius: 10px;
-      background: #fff;
-      border: 1px solid #ddd;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: background 0.1s, transform 0.1s, color 0.1s;
-      -webkit-tap-highlight-color: transparent;
-      --mdc-icon-size: 20px;
-      color: #aaa;
-    }
-    .power-btn:active {
-      transform: scale(0.92);
-      background: #f0f0f0;
-    }
-    .power-btn.active {
-      border-color: #2ecc71;
-      background-color: #2ecc71;
-      color: #fff;
-    }
-    
-    .top-title {
-      flex: 1;
-      text-align: center;
-      font-size: 10px;
-      color: #999;
-      letter-spacing: 0.08em;
-    }
-    .top-spacer {
-      width: 34px;
-      flex-shrink: 0;
-    }
-
-    /* D-pad */
-    .pad {
-      width: 220px;
-      height: 220px;
-      border-radius: 50%;
-      background: #fff;
-      border: 1px solid #ddd;
-      margin: 0 auto;
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .arr {
-      position: absolute;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 80px;
-      height: 80px;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .arr.u { top: 0;    left: 50%; transform: translateX(-50%); }
-    .arr.d { bottom: 0; left: 50%; transform: translateX(-50%); }
-    .arr.l { left: 0;   top: 50%; transform: translateY(-50%); }
-    .arr.r { right: 0;  top: 50%; transform: translateY(-50%); }
-
-    .icon-wrap {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      --mdc-icon-size: 28px;
-      color: #666;
-      transition: background 0.1s, color 0.08s;
-    }
-    .arr:active .icon-wrap {
-      background: #f0f0f0;
-      color: #111;
-    }
-
-    .ok {
-      width: 78px;
-      height: 78px;
-      border-radius: 50%;
-      background: #f0f0f0;
-      border: 1px solid #ddd;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      font-weight: 500;
-      color: #333;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      transition: background 0.1s;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .ok:active {
-      background: #e0e0e0;
-      color: #111;
-    }
-
-    /* Bottom buttons */
-    .btn-row {
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-    }
-    .btn {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 18px;
-      width: 80px;
-      height: 72px;
-      cursor: pointer;
-      font-size: 11px;
-      color: #666;
-      transition: transform 0.1s, background-color 0.1s, color 0.1s, border-color 0.1s;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .btn:active {
-      transform: scale(0.92);
-      background: #f0f0f0;
-    }
-    .btn.no-label {
-      height: 48px;
-      border-radius: 12px;
-    }
-    
-    /* ACTIEF: Kleurt de home knop blauw als de TV op de launcher staat */
-    .btn.active {
-      background-color: #2980b9;
-      border-color: #2980b9;
-      color: #fff;
-    }
-    .btn.active ha-icon {
-      color: #fff;
-    }
-    
-    .btn ha-icon {
-      --mdc-icon-size: 26px;
-      color: #666;
-      transition: color 0.1s;
-    }
-
-    /* App row styling */
-    .app-row {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 12px;
-      margin: 5px 0;
-      padding: 0 10px;
-      flex-wrap: wrap;
-    }
-    .app-row ha-icon-button {
-      color: #666;
-      background-color: #fff;
-      border: 1px solid #ddd;
-      border-radius: 50%;
-      --mdc-icon-button-size: 48px;
-      --mdc-icon-size: 26px;
-      transition: transform 0.1s, background-color 0.1s, color 0.1s;
-    }
-    .app-row ha-icon-button:active {
-      transform: scale(0.92);
-      background-color: #f0f0f0;
-    }
-    .app-row ha-icon-button.active {
-      background-color: #2980b9;
-      border-color: #2980b9;
-      color: #fff;
-    }
-
-    /* Volume */
-    .vol-wrap {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .vol-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 34px;
-      height: 34px;
-      border-radius: 10px;
-      background: #fff;
-      border: 1px solid #ddd;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: background 0.1s, transform 0.1s;
-      -webkit-tap-highlight-color: transparent;
-      --mdc-icon-size: 18px;
-      color: #666;
-    }
-    .vol-btn:active {
-      background: #f0f0f0;
-      transform: scale(0.92);
-    }
-    .vol-btn.muted {
-      border-color: #c0392b66;
-      color: #c0392b;
-    }
-    input[type="range"] {
-      width: 120px;
-      height: 4px;
-      accent-color: #378ADD;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-  `;
 __decorate([
     n({ attribute: false })
-], GoogleTVRemoteCard.prototype, "hass", void 0);
-__decorate([
-    n({ attribute: false })
-], GoogleTVRemoteCard.prototype, "config", void 0);
+], LGWebOSRemoteCard.prototype, "hass", void 0);
 __decorate([
     r()
-], GoogleTVRemoteCard.prototype, "_volume", void 0);
-__decorate([
-    r()
-], GoogleTVRemoteCard.prototype, "_muted", void 0);
-GoogleTVRemoteCard = __decorate([
-    t("google-tv-remote-card")
-], GoogleTVRemoteCard);
+], LGWebOSRemoteCard.prototype, "_config", void 0);
+LGWebOSRemoteCard = __decorate([
+    t("lg-webos-remote-card")
+], LGWebOSRemoteCard);
 
-export { GoogleTVRemoteCard };
+export { LGWebOSRemoteCard };
