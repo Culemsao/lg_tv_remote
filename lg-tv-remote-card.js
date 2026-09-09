@@ -76,21 +76,21 @@ const t=t=>(e,o)=>{void 0!==o?o.addInitializer(()=>{customElements.define(t,e);}
 const DEFAULT_APPS = {
     netflix: {
         name: "Netflix",
-        activity: "netflix",
+        activity: "Netflix",
         icon: "mdi:netflix",
         packageId: "Netflix",
     },
     nlziet: {
         name: "NLZIET",
-        activity: "nlziet",
+        activity: "NLZIET",
         icon: "mdi:television-play",
         packageId: "NLZIET",
     },
     spotify: {
         name: "Spotify",
-        activity: "spotify",
+        activity: "Spotify: muziek en podcasts",
         icon: "mdi:spotify",
-        packageId: "Spotify",
+        packageId: "Spotify: muziek en podcasts",
     },
     youtube: {
         name: "YouTube",
