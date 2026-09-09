@@ -13,6 +13,12 @@ const DEFAULT_APPS: Record<
     icon: "mdi:netflix",
     packageId: "Netflix",
   },
+  media_player: {
+    name: "Media Player",
+    activity: "Media Player",
+    icon: "mdi:folder-play",
+    packageId: "Media Player",
+  },
   nlziet: {
     name: "NLZIET",
     activity: "NLZIET",
