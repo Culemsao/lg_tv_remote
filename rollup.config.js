@@ -3,10 +3,10 @@ import commonjs from "@rollup/plugin-commonjs";
 import typescript from "@rollup/plugin-typescript";
 
 export default {
-  input: "src/google-tv-remote-card.ts",
+  input: "src/lg-tv-remote-card.ts",
 
   output: {
-    file: "google-tv-remote-card.js",
+    file: "lg-tv-remote-card.js",
     format: "es",
     sourcemap: false,
   },
@@ -15,9 +15,9 @@ export default {
     resolve({
       browser: true,
       exportConditions: ["browser", "module", "import", "default"],
-      dedupe: ["lit"]
+      dedupe: ["lit"],
     }),
     commonjs(),
-    typescript()
+    typescript(),
   ],
 };

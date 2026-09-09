@@ -1,8 +1,8 @@
 {
-  "name": "google-tv-remote-card",
-  "version": "0.1.36",
+  "name": "lg-tv-remote-card",
+  "version": "0.0.01",
   "type": "module",
-  "description": "Custom Google TV remote Lovelace card",
+  "description": "Custom LG TV remote Lovelace card",
   "scripts": {
     "build": "rollup -c"
   },

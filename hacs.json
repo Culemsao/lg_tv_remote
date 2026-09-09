@@ -1,6 +1,6 @@
 {
-  "name": "TV Streamer Remote",
+  "name": "LG TV Remote",
   "render_readme": true,
-  "filename": "google-tv-remote-card.js",
+  "filename": "lg-tv-remote-card.js",
   "category": "lovelace"
 }
