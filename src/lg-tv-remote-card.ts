@@ -1,16 +1,43 @@
-import { LitElement, html, css, TemplateResult, PropertyValues } from "lit";
+import { LitElement, html, css, TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { HomeAssistant, LovelaceCard } from "custom-card-helpers";
-import { LGRemoteCardConfig, LGSourceConfig } from "./types";
+import {
+  HomeAssistant,
+  LovelaceCard,
+  LovelaceCardConfig,
+} from "custom-card-helpers";
 
-@customElement("lg-webos-remote-card")
-export class LGWebOSRemoteCard extends LitElement implements LovelaceCard {
+interface AppConfig {
+  id?: string;
+  name: string;
+  icon?: string;
+}
+
+interface CardConfig extends LovelaceCardConfig {
+  remote_entity: string; // Jouw media_player.lg_webos_tv entiteit
+  media_entity?: string;
+  title?: string;
+  show_title?: boolean;
+  show_navigation?: boolean;
+  show_buttons?: boolean;
+  show_apps?: boolean;
+  show_volume?: boolean;
+  show_extra_actions?: boolean;
+  show_label_navigation?: boolean;
+  show_label_volume?: boolean;
+  show_button_labels?: boolean;
+  label_navigation?: string;
+  label_volume?: string;
+  apps?: (string | AppConfig)[];
+}
+
+@customElement("google-tv-remote-card")
+export class LGTVRemoteCard extends LitElement implements LovelaceCard {
   @property({ attribute: false }) public hass!: HomeAssistant;
-  @state() private _config!: LGRemoteCardConfig;
+  @state() private _config!: CardConfig;
 
-  public setConfig(config: LGRemoteCardConfig): void {
-    if (!config.entity) {
-      throw new Error("Geef een geldige LG WebOS media_player entiteit op.");
+  public setConfig(config: CardConfig): void {
+    if (!config.remote_entity) {
+      throw new Error('De parameter "remote_entity" is verplicht.');
     }
     this._config = {
       show_title: true,
@@ -18,6 +45,7 @@ export class LGWebOSRemoteCard extends LitElement implements LovelaceCard {
       show_buttons: true,
       show_apps: true,
       show_volume: true,
+      show_extra_actions: true,
       show_label_navigation: true,
       show_label_volume: true,
       show_button_labels: true,
@@ -27,356 +55,293 @@ export class LGWebOSRemoteCard extends LitElement implements LovelaceCard {
     };
   }
 
-  protected shouldUpdate(changedProps: PropertyValues): boolean {
-    if (changedProps.has("_config")) return true;
-    const oldHass = changedProps.get("hass") as HomeAssistant | undefined;
-    if (!oldHass) return true;
-
-    return (
-      oldHass.states[this._config.entity] !==
-        this.hass.states[this._config.entity] ||
-      (!!this._config.ampli_entity &&
-        oldHass.states[this._config.ampli_entity] !==
-          this.hass.states[this._config.ampli_entity])
-    );
-  }
-
-  private _callService(
-    service: string,
-    serviceData: any = {},
-    domain = "media_player",
-  ): void {
-    this.hass.callService(domain, service, {
-      entity_id: this._config.entity,
-      ...serviceData,
+  // Actie 1: Fysieke knoppen simuleren op de LG TV
+  private _sendButtonCommand(webosButton: string): void {
+    this.hass.callService("webostv", "button", {
+      entity_id: this._config.remote_entity,
+      button: webosButton,
     });
   }
 
-  private _handleVolume(
-    action: "volume_up" | "volume_down" | "volume_mute",
-  ): void {
-    const targetEntity = this._config.ampli_entity || this._config.entity;
-    const domain = targetEntity.startsWith("media_player.")
-      ? "media_player"
-      : "button";
-
-    this.hass.callService(domain, action, {
+  // Actie 2: Media player acties uitvoeren (zoals volume en aan/uit)
+  private _sendMediaCommand(service: string): void {
+    const targetEntity =
+      this._config.media_entity || this._config.remote_entity;
+    this.hass.callService("media_player", service, {
       entity_id: targetEntity,
     });
   }
 
-  private _handlePower(): void {
-    const stateObj = this.hass.states[this._config.entity];
-    if (!stateObj || stateObj.state === "off") {
-      if (this._config.mac) {
-        this.hass.callService("wake_on_lan", "send_magic_packet", {
-          mac: this._config.mac,
-        });
-      } else {
-        this._callService("turn_on");
-      }
-    } else {
-      this._callService("turn_off");
-    }
+  // Actie 3: Geavanceerde systeemmenu's openen via Luna commando's
+  private _sendSpecialCommand(commandString: string): void {
+    this.hass.callService("webostv", "command", {
+      entity_id: this._config.remote_entity,
+      command: commandString,
+    });
   }
 
-  private _handleSource(sourceName: string): void {
-    this._callService("select_source", { source: sourceName });
+  // Actie 4: Apps openen op basis van de exacte naam (Input Source)
+  private _launchLGApp(sourceName: string): void {
+    const targetEntity =
+      this._config.media_entity || this._config.remote_entity;
+    this.hass.callService("media_player", "select_source", {
+      entity_id: targetEntity,
+      source: sourceName,
+    });
   }
 
-  protected render(): TemplateResult | void {
+  protected render(): TemplateResult {
     if (!this.hass || !this._config) return html``;
 
-    const stateObj = this.hass.states[this._config.entity];
-    const isOn = stateObj && stateObj.state !== "off";
-    const currentSource = stateObj?.attributes?.source;
-
-    const scale = this._config.dimensions?.scale || 1;
-    const borderWidth = this._config.dimensions?.border_width || "1px";
-    const btnColor =
-      this._config.colors?.buttons ||
-      "var(--deactive-background-button-color, #f2f0fa)";
-    const txtColor = this._config.colors?.texts || "var(--primary-text-color)";
-    const bgColor =
-      this._config.colors?.background || "var(--primary-background-color)";
-    const borderColor =
-      this._config.colors?.border || "var(--app-header-text-color, #ccc)";
+    const stateObj = this.hass.states[this._config.remote_entity];
+    const isTvOn =
+      stateObj && stateObj.state !== "off" && stateObj.state !== "unavailable";
+    const currentSource = stateObj?.attributes?.source || "";
 
     return html`
-      <ha-card
-        style="
-        --remote-scale: ${scale};
-        --remote-border-width: ${borderWidth};
-        --remote-btn-color: ${btnColor};
-        --remote-txt-color: ${txtColor};
-        --remote-bg-color: ${bgColor};
-        --remote-border-color: ${borderColor};
-      "
-      >
+      <ha-card>
         ${this._config.show_title && this._config.title
-          ? html`<div class="title">${this._config.title}</div>`
+          ? html`<div class="card-header">${this._config.title}</div>`
           : ""}
+        <div class="card-content">
+          <div class="top-control-row">
+            <ha-icon-button
+              class="power-btn ${isTvOn ? "active" : ""}"
+              icon="mdi:power"
+              @click="${() =>
+                this._sendMediaCommand(isTvOn ? "turn_off" : "turn_on")}"
+            ></ha-icon-button>
+            <ha-icon-button
+              icon="mdi:input"
+              title="Invoerbron Menu"
+              @click="${() =>
+                this._sendSpecialCommand(
+                  "com.webos.surfacemanager/showInputPicker",
+                )}"
+            ></ha-icon-button>
+          </div>
 
-        <div class="row central">
-          <ha-icon-button
-            class="btn power ${isOn ? "on" : ""}"
-            @click=${this._handlePower}
-          >
-            <ha-icon icon="mdi:power"></ha-icon>
-          </ha-icon-button>
-        </div>
-
-        ${this._config.show_navigation
-          ? html`
-              ${this._config.show_label_navigation
-                ? html`<div class="label">
-                    ${this._config.label_navigation}
-                  </div>`
-                : ""}
-              <div class="dpad">
-                <div class="row central">
+          ${this._config.show_navigation
+            ? html`
+                ${this._config.show_label_navigation
+                  ? html`<div class="section-label">
+                      ${this._config.label_navigation}
+                    </div>`
+                  : ""}
+                <div class="dpad-container">
                   <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "UP",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:chevron-up"></ha-icon
+                    class="dpad-button up"
+                    icon="mdi:chevron-up"
+                    @click="${() => this._sendButtonCommand("UP")}"
                   ></ha-icon-button>
-                </div>
-                <div class="row space-betweenHorizontal">
-                  <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "LEFT",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:chevron-left"></ha-icon
-                  ></ha-icon-button>
-                  <button
-                    class="btn ok-btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "ENTER",
-                        media_content_type: "button",
-                      })}
-                  >
-                    OK
-                  </button>
-                  <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "RIGHT",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:chevron-right"></ha-icon
-                  ></ha-icon-button>
-                </div>
-                <div class="row central">
-                  <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "DOWN",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:chevron-down"></ha-icon
-                  ></ha-icon-button>
-                </div>
-              </div>
-            `
-          : ""}
-        ${this._config.show_buttons
-          ? html`
-              <div class="row space-around">
-                <div class="btn-container">
-                  <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "BACK",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:arrow-left"></ha-icon
-                  ></ha-icon-button>
-                  ${this._config.show_button_labels
-                    ? html`<span class="btn-label">terug</span>`
-                    : ""}
-                </div>
-                <div class="btn-container">
-                  <ha-icon-button
-                    class="btn"
-                    @click=${() =>
-                      this._callService("play_media", {
-                        media_content_id: "HOME",
-                        media_content_type: "button",
-                      })}
-                    ><ha-icon icon="mdi:home"></ha-icon
-                  ></ha-icon-button>
-                  ${this._config.show_button_labels
-                    ? html`<span class="btn-label">home</span>`
-                    : ""}
-                </div>
-              </div>
-            `
-          : ""}
-        ${this._config.show_apps &&
-        this._config.sources &&
-        this._config.sources.length > 0
-          ? html`
-              <div class="apps-containerRow">
-                ${this._config.sources.map((src: LGSourceConfig) => {
-                  const isAppActive =
-                    currentSource?.toLowerCase() === src.name.toLowerCase();
-                  return html`
+                  <div class="dpad-row">
                     <ha-icon-button
-                      class="btn app-btn ${isAppActive ? "active-app" : ""}"
-                      @click=${() => this._handleSource(src.name)}
-                    >
-                      ${src.icon === "disney" || src.icon === "amazon"
-                        ? html`<span class="special-icon">${src.icon}</span>`
-                        : html`<ha-icon icon="${src.icon}"></ha-icon>`}
-                    </ha-icon-button>
-                  `;
-                })}
-              </div>
-            `
-          : ""}
-        ${this._config.show_volume
-          ? html`
-              ${this._config.show_label_volume
-                ? html`<div class="label">${this._config.label_volume}</div>`
-                : ""}
-              <div class="row space-betweenHorizontal volume-row">
-                <ha-icon-button
-                  class="btn"
-                  @click=${() => this._handleVolume("volume_down")}
-                  ><ha-icon icon="mdi:volume-minus"></ha-icon
-                ></ha-icon-button>
-                <ha-icon-button
-                  class="btn"
-                  @click=${() => this._handleVolume("volume_mute")}
-                  ><ha-icon icon="mdi:volume-off"></ha-icon
-                ></ha-icon-button>
-                <ha-icon-button
-                  class="btn"
-                  @click=${() => this._handleVolume("volume_up")}
-                  ><ha-icon icon="mdi:volume-plus"></ha-icon
-                ></ha-icon-button>
-              </div>
-            `
-          : ""}
+                      class="dpad-button left"
+                      icon="mdi:chevron-left"
+                      @click="${() => this._sendButtonCommand("LEFT")}"
+                    ></ha-icon-button>
+                    <ha-icon-button
+                      class="dpad-button ok"
+                      icon="mdi:checkbox-blank-circle"
+                      @click="${() => this._sendButtonCommand("ENTER")}"
+                    ></ha-icon-button>
+                    <ha-icon-button
+                      class="dpad-button right"
+                      icon="mdi:chevron-right"
+                      @click="${() => this._sendButtonCommand("RIGHT")}"
+                    ></ha-icon-button>
+                  </div>
+                  <ha-icon-button
+                    class="dpad-button down"
+                    icon="mdi:chevron-down"
+                    @click="${() => this._sendButtonCommand("DOWN")}"
+                  ></ha-icon-button>
+                </div>
+              `
+            : ""}
+          ${this._config.show_buttons
+            ? html`
+                <div class="button-row">
+                  <div class="control-button-wrapper">
+                    <ha-icon-button
+                      class="control-button"
+                      icon="mdi:arrow-left"
+                      @click="${() => this._sendButtonCommand("BACK")}"
+                    ></ha-icon-button
+                    >${this._config.show_button_labels
+                      ? html`<span class="button-label">terug</span>`
+                      : ""}
+                  </div>
+                  <div class="control-button-wrapper">
+                    <ha-icon-button
+                      class="control-button ${isTvOn && currentSource === "Home"
+                        ? "active"
+                        : ""}"
+                      icon="mdi:home"
+                      @click="${() => this._sendButtonCommand("HOME")}"
+                    ></ha-icon-button
+                    >${this._config.show_button_labels
+                      ? html`<span class="button-label">home</span>`
+                      : ""}
+                  </div>
+                  <div class="control-button-wrapper">
+                    <ha-icon-button
+                      class="control-button"
+                      icon="mdi:menu"
+                      @click="${() => this._sendButtonCommand("MENU")}"
+                    ></ha-icon-button
+                    >${this._config.show_button_labels
+                      ? html`<span class="button-label">menu</span>`
+                      : ""}
+                  </div>
+                </div>
+              `
+            : ""}
+          ${this._config.show_extra_actions
+            ? html`
+                <div class="button-row extra-actions">
+                  <ha-icon-button
+                    icon="mdi:information-outline"
+                    title="Info"
+                    @click="${() => this._sendButtonCommand("INFO")}"
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    icon="mdi:television-classic"
+                    title="Live TV"
+                    @click="${() => this._sendButtonCommand("LIVETV")}"
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    icon="mdi:cog"
+                    title="Instellingen"
+                    @click="${() => this._sendButtonCommand("DASHBOARD")}"
+                  ></ha-icon-button>
+                </div>
+              `
+            : ""}
+          ${this._config.show_volume
+            ? html`
+                ${this._config.show_label_volume
+                  ? html`<div class="section-label">
+                      ${this._config.label_volume}
+                    </div>`
+                  : ""}
+                <div class="volume-row">
+                  <ha-icon-button
+                    icon="mdi:volume-minus"
+                    @click="${() => this._sendMediaCommand("volume_down")}"
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    icon="mdi:volume-mute"
+                    @click="${() => this._sendMediaCommand("volume_mute")}"
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    icon="mdi:volume-plus"
+                    @click="${() => this._sendMediaCommand("volume_up")}"
+                  ></ha-icon-button>
+                </div>
+              `
+            : ""}
+          ${this._config.show_apps &&
+          this._config.apps &&
+          this._config.apps.length > 0
+            ? html`
+                <div class="apps-row">
+                  ${this._config.apps.map((app) => {
+                    const name = typeof app === "string" ? app : app.name;
+                    const icon =
+                      typeof app === "string"
+                        ? "mdi:television-play"
+                        : app.icon || "mdi:television-play";
+                    return html`<ha-icon-button
+                      class="app-button ${isTvOn &&
+                      currentSource.toLowerCase() === name.toLowerCase()
+                        ? "active"
+                        : ""}"
+                      icon="${icon}"
+                      title="${name}"
+                      @click="${() => this._launchLGApp(name)}"
+                    ></ha-icon-button>`;
+                  })}
+                </div>
+              `
+            : ""}
+        </div>
       </ha-card>
     `;
   }
 
-  static get styles() {
-    return css`
-      ha-card {
-        background-color: var(--remote-bg-color);
-        border: var(--remote-border-width) solid var(--remote-border-color);
-        padding: calc(16px * var(--remote-scale));
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        transform: scale(var(--remote-scale));
-        transform-origin: top center;
-      }
-      .title {
-        font-size: 1.2em;
-        font-weight: bold;
-        margin-bottom: 8px;
-        color: var(--remote-txt-color);
-      }
-      .label {
-        font-size: 0.8em;
-        text-transform: uppercase;
-        margin: 8px 0;
-        color: var(--remote-txt-color);
-        opacity: 0.7;
-      }
-      .row {
-        display: flex;
-        width: 100%;
-        justify-content: center;
-        margin: 4px 0;
-      }
-      .central {
-        justify-content: center;
-      }
-      .space-around {
-        justify-content: space-around;
-        width: 100%;
-      }
-      .space-betweenHorizontal {
-        justify-content: space-between;
-        width: 80%;
-      }
-      .dpad {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin: 8px 0;
-      }
-      .btn {
-        background-color: var(--remote-btn-color);
-        color: var(--remote-txt-color);
-        border-radius: 50%;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 48px;
-        height: 48px;
-        transition: background-color 0.2s;
-      }
-      .ok-btn {
-        border-radius: 12px;
-        font-weight: bold;
-        width: 54px;
-        height: 48px;
-      }
-      .power.on {
-        background-color: #ef5350;
-        color: white;
-      }
-      .btn-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-      .btn-label {
-        font-size: 0.75em;
-        margin-top: 2px;
-        color: var(--remote-txt-color);
-      }
-      .apps-containerRow {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-        margin: 12px 0;
-      }
-      .active-app {
-        border: 2px solid var(--accent-color, #03a9f4);
-        box-shadow: 0 0 8px var(--accent-color, #03a9f4);
-      }
-      .special-icon {
-        font-size: 0.7em;
-        font-weight: bold;
-        text-transform: uppercase;
-      }
-      .volume-row {
-        margin-top: 8px;
-      }
-    `;
-  }
-
-  public getCardSize(): number {
-    return 5;
-  }
+  static styles = css`
+    ha-card {
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .card-header {
+      font-size: 18px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      opacity: 0.5;
+      text-align: center;
+      margin-top: 12px;
+    }
+    .top-control-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .power-btn {
+      color: var(--error-color, #db4437);
+    }
+    .power-btn.active {
+      color: var(--success-color, #4caf50);
+    }
+    .dpad-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 12px 0;
+    }
+    .dpad-row {
+      display: flex;
+      justify-content: center;
+    }
+    .dpad-button {
+      --mdc-icon-size: 38px;
+    }
+    .ok {
+      --mdc-icon-size: 46px;
+      margin: 0 12px;
+      color: var(--primary-color);
+    }
+    .button-row,
+    .volume-row,
+    .apps-row {
+      display: flex;
+      justify-content: space-around;
+      margin: 12px 0;
+    }
+    .extra-actions {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 8px;
+    }
+    .control-button-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .button-label {
+      font-size: 11px;
+      opacity: 0.6;
+    }
+    .active {
+      color: var(--accent-color, #ff9800);
+    }
+    ha-icon-button {
+      color: var(--primary-text-color);
+    }
+  `;
 }
