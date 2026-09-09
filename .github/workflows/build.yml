@@ -1,0 +1,46 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main # Verander naar 'master' als jouw hoofdbranch zo heet
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "rollup.config.js"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: npm install
+
+      # Verhoogt automatisch de patch-versie (bijv. v0.1.21 -> v0.1.22)
+      # --no-git-tag-version zorgt ervoor dat er geen zware Git Tag wordt aangemaakt, alleen bestandswijzigingen
+      - name: Bump version
+        run: npm version patch --no-git-tag-version
+
+      - run: npm run build
+
+      # Neemt nu ook package.json en package-lock.json mee in de commit
+      - name: Commit build and version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@://github.com"
+
+          # Voeg zowel de aangepaste javascript als de package JSON-bestanden toe
+          git add lg-tv-remote-card.js package.json package-lock.json
+
+          git diff --staged --quiet || git commit -m "build: update gecompileerde javascript & versie naar $(node -p "require('./package.json').version")"
+          git push
