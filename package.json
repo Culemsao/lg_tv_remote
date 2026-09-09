@@ -1,6 +1,6 @@
 {
   "name": "lg-tv-remote-card",
-  "version": "0.0.01",
+  "version": "0.0.1",
   "type": "module",
   "description": "Custom LG TV remote Lovelace card",
   "scripts": {
