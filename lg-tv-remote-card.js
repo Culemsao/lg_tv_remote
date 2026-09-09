@@ -72,7 +72,7 @@ const t=t=>(e,o)=>{void 0!==o?o.addInitializer(()=>{customElements.define(t,e);}
  * SPDX-License-Identifier: BSD-3-Clause
  */function r(r){return n({...r,state:!0,attribute:!1})}
 
-// LG WebOS specifieke app-lijst met behoud van de originele register-structuur
+// Gecorrigeerde DEFAULT_APPS: Structuur identiek aan origineel, maar met LG webOS App IDs en bronnamen
 const DEFAULT_APPS = {
     netflix: {
         name: "Netflix",
@@ -131,7 +131,7 @@ const DEFAULT_APPS = {
         appId: "org.xbmc.kodi",
     },
 };
-let LGTVRemoteCard = class LGTVRemoteCard extends i {
+let GoogleTVRemoteCard = class GoogleTVRemoteCard extends i {
     setConfig(config) {
         if (!config.remote_entity || !config.media_entity) {
             throw new Error("Zowel remote_entity als media_entity zijn verplicht.");
@@ -150,21 +150,21 @@ let LGTVRemoteCard = class LGTVRemoteCard extends i {
             ...config,
         };
     }
-    // Wordt aangeroepen door de navigatie en systeemenknoppen (UP, DOWN, ENTER, enz.)
+    // Aangepast naar webostv.button integratieservice
     _handleAction(buttonCode) {
         this.hass.callService("webostv", "button", {
             entity_id: this._config.remote_entity,
             button: buttonCode,
         });
     }
-    // Volumeregeling met ondersteuning voor de aparte volume_entity (zoals Sonos) uit de originele functionaliteit
+    // Volumeregeling conform de originele logica (scheiding tussen media_entity en volume_entity)
     _handleVolume(service) {
         const targetEntity = this._config.volume_entity || this._config.media_entity;
         this.hass.callService("media_player", service, {
             entity_id: targetEntity,
         });
     }
-    // App Launcher die de kortere defaults of handmatige overschrijvingen start via select_source
+    // App Launcher aangepast naar de select_source methodiek van webOS
     _launchApp(appIdentifier) {
         const defaultApp = DEFAULT_APPS[appIdentifier.toLowerCase()];
         const finalSource = defaultApp ? defaultApp.appId : appIdentifier;
@@ -182,92 +182,87 @@ let LGTVRemoteCard = class LGTVRemoteCard extends i {
             mediaState.state !== "unavailable";
         const currentSource = mediaState?.attributes?.source || "";
         return b `
-      <ha-card>
-        ${this._config.show_title && this._config.title
-            ? b `<div class="card-header">${this._config.title}</div>`
-            : ""}
-
-        <div class="card-content">
-          <!-- OORSPRONKELIJKE D-PAD INDELING MET GROTE TAP TARGETS -->
-          ${this._config.show_navigation
+      <ha-card .header="${this._config.show_title ? this._config.title : ""}">
+        <!-- D-pad navigatie sectie -->
+        ${this._config.show_navigation
             ? b `
-                ${this._config.show_label_navigation
+              ${this._config.show_label_navigation
                 ? b `<div class="section-label">
-                      ${this._config.label_navigation}
-                    </div>`
+                    ${this._config.label_navigation}
+                  </div>`
                 : ""}
-                <div class="dpad-container">
-                  <div class="dpad">
+              <div class="dpad-container">
+                <div class="dpad">
+                  <ha-icon-button
+                    class="dpad-button up"
+                    icon="mdi:chevron-up"
+                    @click="${() => this._handleAction("UP")}"
+                  ></ha-icon-button>
+                  <div class="dpad-row">
                     <ha-icon-button
-                      class="dpad-button up"
-                      icon="mdi:chevron-up"
-                      @click="${() => this._handleAction("UP")}"
+                      class="dpad-button left"
+                      icon="mdi:chevron-left"
+                      @click="${() => this._handleAction("LEFT")}"
                     ></ha-icon-button>
-                    <div class="dpad-row">
-                      <ha-icon-button
-                        class="dpad-button left"
-                        icon="mdi:chevron-left"
-                        @click="${() => this._handleAction("LEFT")}"
-                      ></ha-icon-button>
-                      <ha-icon-button
-                        class="dpad-button ok"
-                        icon="mdi:checkbox-blank-circle"
-                        @click="${() => this._handleAction("ENTER")}"
-                      ></ha-icon-button>
-                      <ha-icon-button
-                        class="dpad-button right"
-                        icon="mdi:chevron-right"
-                        @click="${() => this._handleAction("RIGHT")}"
-                      ></ha-icon-button>
-                    </div>
                     <ha-icon-button
-                      class="dpad-button down"
-                      icon="mdi:chevron-down"
-                      @click="${() => this._handleAction("DOWN")}"
+                      class="dpad-button ok"
+                      icon="mdi:checkbox-blank-circle"
+                      @click="${() => this._handleAction("ENTER")}"
+                    ></ha-icon-button>
+                    <ha-icon-button
+                      class="dpad-button right"
+                      icon="mdi:chevron-right"
+                      @click="${() => this._handleAction("RIGHT")}"
                     ></ha-icon-button>
                   </div>
+                  <ha-icon-button
+                    class="dpad-button down"
+                    icon="mdi:chevron-down"
+                    @click="${() => this._handleAction("DOWN")}"
+                  ></ha-icon-button>
                 </div>
-              `
+              </div>
+            `
             : ""}
 
-          <!-- OORSPRONKELIJKE TERUG- EN HOME-KNOPPEN MET REFRESH VAN STATE COLORS -->
-          ${this._config.show_buttons
+        <!-- Knoppen sectie (Terug en Home) -->
+        ${this._config.show_buttons
             ? b `
-                <div class="button-container">
-                  <div class="button-wrapper">
-                    <ha-icon-button
-                      class="remote-button"
-                      icon="mdi:arrow-left"
-                      @click="${() => this._handleAction("BACK")}"
-                    ></ha-icon-button>
-                    ${this._config.show_button_labels
+              <div class="button-container">
+                <div class="button-wrapper">
+                  <ha-icon-button
+                    class="remote-button"
+                    icon="mdi:arrow-left"
+                    @click="${() => this._handleAction("BACK")}"
+                  ></ha-icon-button>
+                  ${this._config.show_button_labels
                 ? b `<span class="button-label">terug</span>`
                 : ""}
-                  </div>
-                  <div class="button-wrapper">
-                    <ha-icon-button
-                      class="remote-button ${isTvOn &&
+                </div>
+                <div class="button-wrapper">
+                  <ha-icon-button
+                    class="remote-button ${isTvOn &&
                 currentSource.toLowerCase() === "home"
                 ? "active"
                 : ""}"
-                      icon="mdi:home"
-                      @click="${() => this._handleAction("HOME")}"
-                    ></ha-icon-button>
-                    ${this._config.show_button_labels
+                    icon="mdi:home"
+                    @click="${() => this._handleAction("HOME")}"
+                  ></ha-icon-button>
+                  ${this._config.show_button_labels
                 ? b `<span class="button-label">home</span>`
                 : ""}
-                  </div>
                 </div>
-              `
+              </div>
+            `
             : ""}
 
-          <!-- OORSPRONKELIJKE APP-LAUNCHER BAR INCLUSIEF HIGHLIGHT-STATE -->
-          ${this._config.show_apps &&
+        <!-- App Launcher sectie -->
+        ${this._config.show_apps &&
             this._config.apps &&
             this._config.apps.length > 0
             ? b `
-                <div class="apps-container">
-                  ${this._config.apps.map((app) => {
+              <div class="apps-container">
+                ${this._config.apps.map((app) => {
                 let name = "";
                 let icon = "mdi:television-play";
                 let appKey = "";
@@ -275,9 +270,7 @@ let LGTVRemoteCard = class LGTVRemoteCard extends i {
                     appKey = app.toLowerCase();
                     const defaultApp = DEFAULT_APPS[appKey];
                     name = defaultApp ? defaultApp.name : app;
-                    icon = defaultApp
-                        ? defaultApp.icon
-                        : "mdi:television-play";
+                    icon = defaultApp ? defaultApp.icon : "mdi:television-play";
                 }
                 else {
                     appKey = app.id
@@ -297,114 +290,90 @@ let LGTVRemoteCard = class LGTVRemoteCard extends i {
                     : name.toLowerCase();
                 const isActive = isTvOn && currentSource.toLowerCase() === matchSource;
                 return b `
-                      <ha-icon-button
-                        class="app-button ${isActive ? "active" : ""}"
-                        icon="${icon}"
-                        title="${name}"
-                        @click="${() => this._launchApp(appKey || name)}"
-                      >
-                      </ha-icon-button>
-                    `;
+                    <ha-icon-button
+                      class="app-button ${isActive ? "active" : ""}"
+                      icon="${icon}"
+                      title="${name}"
+                      @click="${() => this._launchApp(appKey || name)}"
+                    >
+                    </ha-icon-button>
+                  `;
             })}
-                </div>
-              `
+              </div>
+            `
             : ""}
 
-          <!-- OORSPRONKELIJKE VOLUMEREGELAAR INTEGRATIE -->
-          ${this._config.show_volume
+        <!-- Volume regelaar sectie -->
+        ${this._config.show_volume
             ? b `
-                ${this._config.show_label_volume
+              ${this._config.show_label_volume
                 ? b `<div class="section-label">
-                      ${this._config.label_volume}
-                    </div>`
+                    ${this._config.label_volume}
+                  </div>`
                 : ""}
-                <div class="volume-container">
-                  <ha-icon-button
-                    icon="mdi:volume-minus"
-                    @click="${() => this._handleVolume("volume_down")}"
-                  ></ha-icon-button>
-                  <ha-icon-button
-                    icon="mdi:volume-mute"
-                    @click="${() => this._handleVolume("volume_mute")}"
-                  ></ha-icon-button>
-                  <ha-icon-button
-                    icon="mdi:volume-plus"
-                    @click="${() => this._handleVolume("volume_up")}"
-                  ></ha-icon-button>
-                </div>
-              `
+              <div class="volume-container">
+                <ha-icon-button
+                  icon="mdi:volume-minus"
+                  @click="${() => this._handleVolume("volume_down")}"
+                ></ha-icon-button>
+                <ha-icon-button
+                  icon="mdi:volume-mute"
+                  @click="${() => this._handleVolume("volume_mute")}"
+                ></ha-icon-button>
+                <ha-icon-button
+                  icon="mdi:volume-plus"
+                  @click="${() => this._handleVolume("volume_up")}"
+                ></ha-icon-button>
+              </div>
+            `
             : ""}
-        </div>
       </ha-card>
     `;
     }
 };
-// DE EXACTE ORIGINELE CSS LAYOUT-STYLING UIT JE REPOSITORY
-LGTVRemoteCard.styles = i$3 `
+// Exact de originele styling uit de gedupliceerde repository
+GoogleTVRemoteCard.styles = i$3 `
+    :host {
+      display: block;
+    }
     ha-card {
       padding: 16px;
-      display: flex;
-      flex-direction: column;
-    }
-    .card-header {
-      font-family: var(--paper-font-headline_-_font-family);
-      font-size: 24px;
-      font-weight: 400;
-      letter-spacing: -0.012em;
-      line-height: 32px;
-      opacity: var(--dark-primary-opacity);
-      padding: 24px 16px 16px;
-      text-align: center;
     }
     .section-label {
-      font-size: 12px;
-      font-weight: 500;
-      text-transform: uppercase;
-      opacity: 0.5;
       text-align: center;
-      margin-top: 16px;
-      letter-spacing: 0.1em;
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      margin: 8px 0;
     }
-
     .dpad-container {
       display: flex;
       justify-content: center;
-      margin: 24px 0;
+      margin: 16px 0;
     }
     .dpad {
-      background: var(--secondary-background-color);
+      position: relative;
+      width: 150px;
+      height: 150px;
+      background: var(--divider-color);
       border-radius: 50%;
-      width: 180px;
-      height: 180px;
       display: flex;
       flex-direction: column;
-      align-items: center;
       justify-content: space-between;
-      padding: 8px;
-      box-sizing: border-box;
-      position: relative;
+      align-items: center;
+      padding: 4px;
     }
     .dpad-row {
       display: flex;
       justify-content: space-between;
       width: 100%;
-      align-items: center;
-      padding: 0 8px;
-      box-sizing: border-box;
     }
     .dpad-button {
       --mdc-icon-size: 32px;
-      color: var(--primary-text-color);
     }
     .dpad-button.ok {
       background: var(--card-background-color);
       border-radius: 50%;
-      width: 56px;
-      height: 56px;
-      --mdc-icon-size: 28px;
-      box-shadow: var(--shadow-elevation-2dp);
     }
-
     .button-container {
       display: flex;
       justify-content: space-around;
@@ -414,68 +383,39 @@ LGTVRemoteCard.styles = i$3 `
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: 64px;
-    }
-    .remote-button {
-      background: var(--secondary-background-color);
-      border-radius: 50%;
-      width: 48px;
-      height: 48px;
-      --mdc-icon-size: 24px;
-      color: var(--primary-text-color);
     }
     .button-label {
       font-size: 12px;
-      opacity: 0.6;
-      margin-top: 8px;
-      text-transform: capitalize;
+      color: var(--secondary-text-color);
+      margin-top: 4px;
     }
-
     .apps-container {
       display: flex;
       justify-content: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 20px 0;
-      padding: 12px;
-      background: var(--secondary-background-color);
-      border-radius: 16px;
+      gap: 8px;
+      margin: 16px 0;
     }
-    .app-button {
-      --mdc-icon-size: 26px;
-      color: var(--primary-text-color);
-      opacity: 0.7;
+    .app-button.active {
+      color: var(--accent-color);
     }
-
     .volume-container {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin: 16px auto 8px;
-      background: var(--secondary-background-color);
-      border-radius: 24px;
-      padding: 4px 8px;
-      width: 85%;
-      box-sizing: border-box;
+      margin-top: 16px;
     }
-    .volume-container ha-icon-button {
-      --mdc-icon-size: 22px;
-      color: var(--primary-text-color);
-    }
-
-    .active {
-      color: var(--accent-color) !important;
-      opacity: 1 !important;
+    .remote-button.active {
+      color: var(--accent-color);
     }
   `;
 __decorate([
     n({ attribute: false })
-], LGTVRemoteCard.prototype, "hass", void 0);
+], GoogleTVRemoteCard.prototype, "hass", void 0);
 __decorate([
     r()
-], LGTVRemoteCard.prototype, "_config", void 0);
-LGTVRemoteCard = __decorate([
-    t("lg-tv-remote-card")
-], LGTVRemoteCard);
+], GoogleTVRemoteCard.prototype, "_config", void 0);
+GoogleTVRemoteCard = __decorate([
+    t("google-tv-remote-card")
+], GoogleTVRemoteCard);
 
-export { LGTVRemoteCard };
+export { GoogleTVRemoteCard };
