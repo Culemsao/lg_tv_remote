@@ -6,9 +6,72 @@ import {
   LovelaceCardConfig,
 } from "custom-card-helpers";
 
+// Register met officiële LG webOS App IDs en bronnamen (sources)
+const DEFAULT_APPS: Record<
+  string,
+  { name: string; source: string; icon: string; appId: string }
+> = {
+  netflix: {
+    name: "Netflix",
+    source: "Netflix",
+    icon: "mdi:netflix",
+    appId: "netflix",
+  },
+  nlziet: {
+    name: "NLZIET",
+    source: "NLZIET",
+    icon: "mdi:television-play",
+    appId: "nlziet",
+  },
+  spotify: {
+    name: "Spotify",
+    source: "Spotify",
+    icon: "mdi:spotify",
+    appId: "spotify",
+  },
+  youtube: {
+    name: "YouTube",
+    source: "YouTube",
+    icon: "mdi:youtube",
+    appId: "youtube.leanback.v4",
+  },
+  videoland: {
+    name: "Videoland",
+    source: "Videoland",
+    icon: "mdi:play-box",
+    appId: "cdp-30",
+  },
+  disneyplus: {
+    name: "Disney+",
+    source: "Disney+",
+    icon: "mdi:television-classic",
+    appId: "cdp-28",
+  },
+  primevideo: {
+    name: "Prime Video",
+    source: "Amazon Prime Video",
+    icon: "mdi:video",
+    appId: "amazon",
+  },
+  viaplay: {
+    name: "Viaplay",
+    source: "Viaplay",
+    icon: "mdi:sports-car",
+    appId: "viaplay",
+  },
+  max: { name: "Max", source: "Max", icon: "mdi:movie-roll", appId: "hbo.max" },
+  plex: { name: "Plex", source: "Plex", icon: "mdi:plex", appId: "plex" },
+  kodi: {
+    name: "Kodi",
+    source: "Kodi",
+    icon: "mdi:kodi",
+    appId: "org.xbmc.kodi",
+  },
+};
+
 interface AppConfig {
   id?: string;
-  name: string;
+  name?: string;
   icon?: string;
 }
 
@@ -30,15 +93,16 @@ interface CardConfig extends LovelaceCardConfig {
   apps?: (string | AppConfig)[];
 }
 
-@customElement("google-tv-remote-card")
+@customElement("lg-tv-remote-card") // Netjes hernoemd naar lg-tv-remote-card!
 export class LGTVRemoteCard extends LitElement implements LovelaceCard {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @state() private _config!: CardConfig;
 
   public setConfig(config: CardConfig): void {
-    if (!config.remote_entity) {
+    if (!config || !config.remote_entity) {
       throw new Error('De parameter "remote_entity" is verplicht.');
     }
+
     this._config = {
       show_title: true,
       show_navigation: true,
@@ -51,12 +115,14 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
       show_button_labels: true,
       label_navigation: "navigatie",
       label_volume: "volume",
+      apps: [],
       ...config,
     };
   }
 
-  // Actie 1: Fysieke knoppen simuleren op de LG TV
+  // Actie 1: Fysieke knoppen simuleren op de LG TV via webostv.button
   private _sendButtonCommand(webosButton: string): void {
+    if (!this.hass) return;
     this.hass.callService("webostv", "button", {
       entity_id: this._config.remote_entity,
       button: webosButton,
@@ -65,6 +131,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
 
   // Actie 2: Media player acties uitvoeren (zoals volume en aan/uit)
   private _sendMediaCommand(service: string): void {
+    if (!this.hass) return;
     const targetEntity =
       this._config.media_entity || this._config.remote_entity;
     this.hass.callService("media_player", service, {
@@ -72,21 +139,28 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
     });
   }
 
-  // Actie 3: Geavanceerde systeemmenu's openen via Luna commando's
+  // Actie 3: Systeemmenu's en Luna commando's openen via webostv.command
   private _sendSpecialCommand(commandString: string): void {
+    if (!this.hass) return;
     this.hass.callService("webostv", "command", {
       entity_id: this._config.remote_entity,
       command: commandString,
     });
   }
 
-  // Actie 4: Apps openen op basis van de exacte naam (Input Source)
-  private _launchLGApp(sourceName: string): void {
+  // Actie 4: Apps openen op basis van webOS App ID of handmatige bronnaam
+  private _launchLGApp(appIdentifier: string): void {
+    if (!this.hass) return;
     const targetEntity =
       this._config.media_entity || this._config.remote_entity;
+
+    // Kijk of de app in de DEFAULT_APPS register staat, zo ja gebruik het App ID
+    const defaultApp = DEFAULT_APPS[appIdentifier.toLowerCase()];
+    const finalSource = defaultApp ? defaultApp.appId : appIdentifier;
+
     this.hass.callService("media_player", "select_source", {
       entity_id: targetEntity,
-      source: sourceName,
+      source: finalSource,
     });
   }
 
@@ -104,6 +178,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
           ? html`<div class="card-header">${this._config.title}</div>`
           : ""}
         <div class="card-content">
+          <!-- Aan/Uit en Input Source Menu -->
           <div class="top-control-row">
             <ha-icon-button
               class="power-btn ${isTvOn ? "active" : ""}"
@@ -121,6 +196,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
             ></ha-icon-button>
           </div>
 
+          <!-- D-Pad Navigatie (LG WebOS Mapping) -->
           ${this._config.show_navigation
             ? html`
                 ${this._config.show_label_navigation
@@ -159,6 +235,8 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
                 </div>
               `
             : ""}
+
+          <!-- Systeemknoppen (Terug, Home, Menu) -->
           ${this._config.show_buttons
             ? html`
                 <div class="button-row">
@@ -174,7 +252,8 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
                   </div>
                   <div class="control-button-wrapper">
                     <ha-icon-button
-                      class="control-button ${isTvOn && currentSource === "Home"
+                      class="control-button ${isTvOn &&
+                      currentSource.toLowerCase() === "home"
                         ? "active"
                         : ""}"
                       icon="mdi:home"
@@ -197,6 +276,8 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
                 </div>
               `
             : ""}
+
+          <!-- Extra LG webOS remote tools -->
           ${this._config.show_extra_actions
             ? html`
                 <div class="button-row extra-actions">
@@ -212,12 +293,14 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
                   ></ha-icon-button>
                   <ha-icon-button
                     icon="mdi:cog"
-                    title="Instellingen"
+                    title="Dashboard Instellingen"
                     @click="${() => this._sendButtonCommand("DASHBOARD")}"
                   ></ha-icon-button>
                 </div>
               `
             : ""}
+
+          <!-- Volumeregeling -->
           ${this._config.show_volume
             ? html`
                 ${this._config.show_label_volume
@@ -241,26 +324,55 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
                 </div>
               `
             : ""}
+
+          <!-- App Launcher met registersupport en handmatige overrides -->
           ${this._config.show_apps &&
           this._config.apps &&
           this._config.apps.length > 0
             ? html`
                 <div class="apps-row">
                   ${this._config.apps.map((app) => {
-                    const name = typeof app === "string" ? app : app.name;
-                    const icon =
-                      typeof app === "string"
-                        ? "mdi:television-play"
-                        : app.icon || "mdi:television-play";
-                    return html`<ha-icon-button
-                      class="app-button ${isTvOn &&
-                      currentSource.toLowerCase() === name.toLowerCase()
-                        ? "active"
-                        : ""}"
-                      icon="${icon}"
-                      title="${name}"
-                      @click="${() => this._launchLGApp(name)}"
-                    ></ha-icon-button>`;
+                    let name = "";
+                    let icon = "mdi:television-play";
+                    let appKey = "";
+
+                    if (typeof app === "string") {
+                      appKey = app.toLowerCase();
+                      const defaultApp = DEFAULT_APPS[appKey];
+                      name = defaultApp ? defaultApp.name : app;
+                      icon = defaultApp
+                        ? defaultApp.icon
+                        : "mdi:television-play";
+                    } else {
+                      appKey = app.id
+                        ? app.id.toLowerCase()
+                        : app.name
+                          ? app.name.toLowerCase()
+                          : "";
+                      const defaultApp = DEFAULT_APPS[appKey];
+                      name = app.name || (defaultApp ? defaultApp.name : "");
+                      icon =
+                        app.icon ||
+                        (defaultApp ? defaultApp.icon : "mdi:television-play");
+                    }
+
+                    // Match de actieve statuskleur op basis van de webOS bronnaam
+                    const defaultAppInfo = DEFAULT_APPS[appKey];
+                    const matchSource = defaultAppInfo
+                      ? defaultAppInfo.source.toLowerCase()
+                      : name.toLowerCase();
+                    const isActive =
+                      isTvOn && currentSource.toLowerCase() === matchSource;
+
+                    return html`
+                      <ha-icon-button
+                        class="app-button ${isActive ? "active" : ""}"
+                        icon="${icon}"
+                        title="${name}"
+                        @click="${() => this._launchLGApp(appKey || name)}"
+                      >
+                      </ha-icon-button>
+                    `;
                   })}
                 </div>
               `
@@ -279,6 +391,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
       font-size: 18px;
       font-weight: bold;
       text-align: center;
+      margin-bottom: 8px;
     }
     .section-label {
       font-size: 11px;
@@ -286,12 +399,12 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
       text-transform: uppercase;
       opacity: 0.5;
       text-align: center;
-      margin-top: 12px;
+      margin-top: 14px;
     }
     .top-control-row {
       display: flex;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
     .power-btn {
       color: var(--error-color, #db4437);
@@ -303,7 +416,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin: 12px 0;
+      margin: 10px 0;
     }
     .dpad-row {
       display: flex;
@@ -314,7 +427,7 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
     }
     .ok {
       --mdc-icon-size: 46px;
-      margin: 0 12px;
+      margin: 0 16px;
       color: var(--primary-color);
     }
     .button-row,
@@ -323,10 +436,12 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
       display: flex;
       justify-content: space-around;
       margin: 12px 0;
+      align-items: center;
     }
     .extra-actions {
-      background: rgba(0, 0, 0, 0.05);
+      background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.05);
       border-radius: 8px;
+      padding: 2px 0;
     }
     .control-button-wrapper {
       display: flex;
@@ -336,12 +451,17 @@ export class LGTVRemoteCard extends LitElement implements LovelaceCard {
     .button-label {
       font-size: 11px;
       opacity: 0.6;
+      margin-top: 2px;
     }
     .active {
       color: var(--accent-color, #ff9800);
     }
     ha-icon-button {
       color: var(--primary-text-color);
+    }
+    .app-button.active {
+      border-bottom: 2px solid var(--accent-color, #ff9800);
+      border-radius: 0;
     }
   `;
 }
