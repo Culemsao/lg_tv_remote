@@ -97,7 +97,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
         const oldHass = changedProps.get("hass");
         if (!oldHass)
             return true;
-        // Alleen updaten als de status van de TV of de receiver verandert
         return (oldHass.states[this._config.entity] !==
             this.hass.states[this._config.entity] ||
             (!!this._config.ampli_entity &&
@@ -111,7 +110,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
         });
     }
     _handleVolume(action) {
-        // Als er een receiver is ingesteld, sturen we de volume-acties daarheen
         const targetEntity = this._config.ampli_entity || this._config.entity;
         const domain = targetEntity.startsWith("media_player.")
             ? "media_player"
@@ -124,7 +122,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
         const stateObj = this.hass.states[this._config.entity];
         if (!stateObj || stateObj.state === "off") {
             if (this._config.mac) {
-                // Gebruik wake_on_lan service als er een MAC-adres is geconfigureerd
                 this.hass.callService("wake_on_lan", "send_magic_packet", {
                     mac: this._config.mac,
                 });
@@ -146,7 +143,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
         const stateObj = this.hass.states[this._config.entity];
         const isOn = stateObj && stateObj.state !== "off";
         const currentSource = stateObj?.attributes?.source;
-        // Dynamische CSS variabelen toepassen op basis van de config (net als in jouw repo)
         const scale = this._config.dimensions?.scale || 1;
         const borderWidth = this._config.dimensions?.border_width || "1px";
         const btnColor = this._config.colors?.buttons ||
@@ -169,7 +165,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
             ? b `<div class="title">${this._config.title}</div>`
             : ""}
 
-        <!-- Power Button -->
         <div class="row central">
           <ha-icon-button
             class="btn power ${isOn ? "on" : ""}"
@@ -179,7 +174,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
           </ha-icon-button>
         </div>
 
-        <!-- Navigation Section -->
         ${this._config.show_navigation
             ? b `
               ${this._config.show_label_navigation
@@ -238,8 +232,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
               </div>
             `
             : ""}
-
-        <!-- Control Buttons (Back / Home) -->
         ${this._config.show_buttons
             ? b `
               <div class="row space-around">
@@ -253,7 +245,7 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
                     ><ha-icon icon="mdi:arrow-left"></ha-icon
                   ></ha-icon-button>
                   ${this._config.show_button_labels
-                ? b `<span class="btn-label">back</span>`
+                ? b `<span class="btn-label">terug</span>`
                 : ""}
                 </div>
                 <div class="btn-container">
@@ -272,8 +264,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
               </div>
             `
             : ""}
-
-        <!-- App Launcher Bar -->
         ${this._config.show_apps &&
             this._config.sources &&
             this._config.sources.length > 0
@@ -295,8 +285,6 @@ let LGWebOSRemoteCard = class LGWebOSRemoteCard extends i {
               </div>
             `
             : ""}
-
-        <!-- Volume Section -->
         ${this._config.show_volume
             ? b `
               ${this._config.show_label_volume
